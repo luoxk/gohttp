@@ -8,8 +8,8 @@ import (
 	"github.com/Carcraftz/cclient"
 	"github.com/Carcraftz/fhttp"
 	"github.com/Carcraftz/fhttp/cookiejar"
+	tls "github.com/Carcraftz/utls"
 	"github.com/andybalholm/brotli"
-	tls "github.com/refraction-networking/utls"
 	"io/ioutil"
 	"net/url"
 
@@ -50,7 +50,7 @@ func (this *TLsChangeHttpClient) AddInterceptor(f func(r *BasicRequest)) {
 }
 
 func NewTlsHttpClient(proxyAddr, customId string) *TLsChangeHttpClient {
-	client, err := cclient.NewClient(tls.HelloIOS_Auto, customId, proxyAddr, true, 1000)
+	client, err := cclient.NewClient(tls.HelloIOS_Auto, proxyAddr, true, 1000)
 	if err != nil {
 		log.Println(err)
 		return nil

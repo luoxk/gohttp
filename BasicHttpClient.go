@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	. "fmt"
 	"golang.org/x/net/http2"
+	"io"
 	"io/ioutil"
 	"log"
 	"net"
@@ -80,6 +81,10 @@ type BasicHttpClient struct {
 	tick         chan bool
 	Pipe         *SuperPipe
 	ctx          context.Context
+}
+
+func (b *BasicHttpClient) Hello() {
+	println("hello")
 }
 
 /*
@@ -394,6 +399,40 @@ func newHttpClient(ctx context.Context, ash2 bool) *BasicHttpClient {
 	}
 	return b
 }
+func NewHttpClientWithProxy(proxy string) *BasicHttpClient {
+
+	tr := &http.Transport{
+		TLSClientConfig: &tls.Config{
+			InsecureSkipVerify: true,
+		},
+		//Proxy:                 http.ProxyURL(proxyU),
+		MaxIdleConns:          100,
+		IdleConnTimeout:       50 * time.Second,
+		TLSHandshakeTimeout:   50 * time.Second,
+		ExpectContinueTimeout: 10 * time.Second,
+	}
+	var proxyU *url.URL
+	if !strings.HasPrefix(proxy, "http://") {
+		proxy = "http://" + proxy
+	}
+	proxyU, _ = url.Parse(proxy)
+	tr.Proxy = http.ProxyURL(proxyU)
+
+	scraper, err := NewTransport(tr)
+
+	if err != nil {
+		log.Println(err)
+		return nil
+	}
+
+	b := &BasicHttpClient{
+		client: &http.Client{
+			Transport: scraper,
+			Jar:       scraper.cookies,
+		},
+	}
+	return b
+}
 
 func NewHttpClientWithConfig(ctx context.Context, config struct {
 	Ash2     bool
@@ -477,6 +516,7 @@ type Response struct {
 	Cookies    []*http.Cookie
 	Url        string
 	Context    string
+	RawBody    []byte
 	StatusCode int
 	Headers    map[string][]string
 	Proto      string
@@ -511,17 +551,7 @@ func (hc *BasicHttpClient) DoRequest2(b *BasicRequest) (response *http.Response,
 	b.ForEachHeaders(func(k, v string) {
 		req.Header[k] = append(req.Header[k], v)
 	})
-
-	//req.Header["Cookie"] = append(req.Header["Cookie"], b.CookieToStr())
-
-	//resp, err := hc.client.Do(req)
-
 	resp, err := hc.client.Transport.RoundTrip(req)
-	/*defer func() {
-		if resp != nil {
-			resp.Body.Close()
-		}
-	}()*/
 	return resp, err
 
 }
@@ -537,17 +567,13 @@ func (hc *BasicHttpClient) DoRequest(b *BasicRequest) (response *Response, err e
 	}
 
 	if err != nil {
-		log.Println(err.Error())
+		//log.Println(err.Error())
 		return
 	}
 
 	b.ForEachHeaders(func(k, v string) {
 		req.Header[k] = append(req.Header[k], v)
 	})
-
-	//req.Header["Cookie"] = append(req.Header["Cookie"], b.CookieToStr())
-
-	//resp, err := hc.client.Do(req)
 
 	resp, err := hc.client.Transport.RoundTrip(req)
 	defer func() {
@@ -556,24 +582,25 @@ func (hc *BasicHttpClient) DoRequest(b *BasicRequest) (response *Response, err e
 		}
 	}()
 	if err != nil {
-		log.Println("gohttp ---> ", err.Error())
+		//log.Println("gohttp ---> ", err.Error())
 
 		return
 	}
-	data, err := ioutil.ReadAll(resp.Body)
+	data, err := io.ReadAll(resp.Body)
 	if err != nil {
-		log.Println("gohttp ---> ", err.Error())
+		//log.Println("gohttp ---> ", err.Error())
 		return
 	}
-	//hc.client.Jar.Cookies()
 	for _, cookie := range resp.Cookies() {
 		b.AddCookie(cookie.Name, cookie.Value)
 	}
+	data = bytes.TrimPrefix(data, []byte("\xef\xbb\xbf"))
 	response = &Response{
 		Request:    b,
 		Url:        b.UrlString(),
 		Cookies:    resp.Cookies(),
 		Context:    string(data),
+		RawBody:    data,
 		StatusCode: resp.StatusCode,
 		Headers:    resp.Header,
 		Proto:      resp.Proto,
